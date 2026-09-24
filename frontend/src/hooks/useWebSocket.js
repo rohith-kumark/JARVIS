@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { agentService } from '../services/agentService';
 
 export function useWebSocket() {
@@ -16,17 +16,20 @@ export function useWebSocket() {
   const [activeTool, setActiveTool] = useState(null);
 
   useEffect(() => {
-    // Connect to WebSocket via agent service
+    // Initiate connection via agentService
     agentService.connect();
 
     const unsubscribe = agentService.subscribe({
       onStatusChange: ({ status }) => {
         setConnectionStatus(status);
+        if (status === 'connected') {
+          console.log('[useWebSocket] Link confirmed to JARVIS Core');
+        }
       },
       onAck: (ack) => {
-        console.log('[useWebSocket] Link confirmed:', ack);
+        console.log('[useWebSocket] Handshake acknowledged:', ack);
       },
-      onThinking: (data) => {
+      onThinking: () => {
         setIsThinking(true);
       },
       onToolStart: (data) => {
@@ -55,19 +58,22 @@ export function useWebSocket() {
           }
         ]);
       },
-      onError: (err) => {
+      onError: (payload) => {
         setIsThinking(false);
         setActiveTool(null);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: 'err_' + Date.now(),
-            sender: 'system',
-            text: `System Alert: ${err.error || 'Communication failure'}`,
-            timestamp: new Date().toISOString(),
-            isError: true,
-          }
-        ]);
+        const errorText = payload?.error || payload?.message;
+        if (errorText) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: 'err_' + Date.now(),
+              sender: 'system',
+              text: `System Alert: ${errorText}`,
+              timestamp: new Date().toISOString(),
+              isError: true,
+            }
+          ]);
+        }
       },
     });
 
@@ -97,7 +103,7 @@ export function useWebSocket() {
 
     const sent = agentService.sendDirective(trimmed, callerPermission);
     if (!sent) {
-      // Fallback to REST API if WebSocket is not ready
+      console.log('[useWebSocket] WS not open, attempting REST fallback delivery...');
       agentService.sendDirectiveRest(trimmed, callerPermission)
         .then((res) => {
           setIsThinking(false);
@@ -120,7 +126,7 @@ export function useWebSocket() {
             {
               id: 'err_' + Date.now(),
               sender: 'system',
-              text: `Delivery failed: ${err.message}`,
+              text: `Delivery failure: ${err.message || 'Unable to communicate with core'}`,
               timestamp: new Date().toISOString(),
               isError: true,
             }

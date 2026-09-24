@@ -4,15 +4,27 @@
  * Keeps networking concerns isolated from React components.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+function resolveApiUrl() {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (envUrl && !envUrl.includes('localhost')) {
+    return envUrl;
+  }
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol;
+    const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : (window.location.hostname || '127.0.0.1');
+    return `${proto}//${hostname}:8000`;
+  }
+  return 'http://127.0.0.1:8000';
+}
 
 class ApiClient {
-  constructor(baseUrl = API_BASE_URL) {
+  constructor(baseUrl = resolveApiUrl()) {
     this.baseUrl = baseUrl;
   }
 
   async _request(endpoint, options = {}) {
-    const url = `${this.baseUrl}${endpoint}`;
+    const currentBase = resolveApiUrl();
+    const url = `${currentBase}${endpoint}`;
     const defaultHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -46,7 +58,6 @@ class ApiClient {
 
   /**
    * Health check endpoint
-   * @returns {Promise<{status: string, version: string, environment: string, llm_provider: string, tools_registered_count: number, uptime_seconds: number}>}
    */
   async getHealth() {
     return this._request('/api/health');
@@ -54,8 +65,6 @@ class ApiClient {
 
   /**
    * Fetch registered tools list
-   * @param {string} [permission]
-   * @returns {Promise<{tools: Array, total: number}>}
    */
   async getTools(permission = null) {
     const query = permission ? `?permission=${encodeURIComponent(permission)}` : '';
@@ -64,9 +73,6 @@ class ApiClient {
 
   /**
    * Manually execute a tool
-   * @param {string} name
-   * @param {object} args
-   * @param {string} permission
    */
   async executeTool(name, args = {}, permission = 'admin') {
     return this._request('/api/tools/execute', {
@@ -81,9 +87,6 @@ class ApiClient {
 
   /**
    * REST chat endpoint
-   * @param {string} message
-   * @param {string} [sessionId]
-   * @param {string} [permission]
    */
   async sendChat(message, sessionId = null, permission = 'admin') {
     return this._request('/api/chat', {

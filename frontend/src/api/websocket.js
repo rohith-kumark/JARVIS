@@ -5,15 +5,28 @@
  * Pure JavaScript - decoupled from UI components.
  */
 
-const DEFAULT_WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/api/ws';
+function resolveWsUrl() {
+  const envUrl = import.meta.env.VITE_WS_URL;
+  // If explicitly specified with an IP, use it
+  if (envUrl && !envUrl.includes('localhost')) {
+    return envUrl;
+  }
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    // Prefer 127.0.0.1 over localhost on Linux to prevent IPv6 [::1] connection refusal
+    const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : (window.location.hostname || '127.0.0.1');
+    return `${proto}//${hostname}:8000/api/ws`;
+  }
+  return 'ws://127.0.0.1:8000/api/ws';
+}
 
 export class JarvisWebSocket {
-  constructor(url = DEFAULT_WS_URL) {
+  constructor(url = resolveWsUrl()) {
     this.url = url;
     this.socket = null;
     this.listeners = new Map();
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 10;
+    this.maxReconnectAttempts = 15;
     this.reconnectDelay = 1500;
     this.pingIntervalMs = 25000;
     this.pingTimer = null;
@@ -66,13 +79,15 @@ export class JarvisWebSocket {
       return;
     }
 
+    // Always re-resolve URL upon connect
+    this.url = resolveWsUrl();
     this._emit('status_change', { status: 'connecting' });
 
     try {
       this.socket = new WebSocket(this.url);
 
       this.socket.onopen = () => {
-        console.log('[WS] Connected to JARVIS WebSocket server');
+        console.log(`[WS] Connected to JARVIS at ${this.url}`);
         this.reconnectAttempts = 0;
         this._startHeartbeat();
         this._emit('status_change', { status: 'connected' });
@@ -90,8 +105,8 @@ export class JarvisWebSocket {
       };
 
       this.socket.onerror = (err) => {
-        console.error('[WS] Connection error:', err);
-        this._emit('error', err);
+        console.warn(`[WS] Connection issue at ${this.url}:`, err);
+        this._emit('connection_error', { url: this.url });
       };
 
       this.socket.onclose = (event) => {
@@ -102,7 +117,7 @@ export class JarvisWebSocket {
         }
       };
     } catch (err) {
-      console.error('[WS] Failed to initialize WebSocket:', err);
+      console.warn('[WS] Failed to instantiate WebSocket:', err);
       this._handleReconnect();
     }
   }
@@ -110,8 +125,8 @@ export class JarvisWebSocket {
   _handleReconnect() {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts += 1;
-      const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), 10000);
-      console.log(`[WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+      const delay = Math.min(this.reconnectDelay * Math.pow(1.3, this.reconnectAttempts - 1), 8000);
+      console.log(`[WS] Reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
       this._emit('status_change', { status: 'reconnecting', attempt: this.reconnectAttempts, delay });
       setTimeout(() => this.connect(), delay);
     } else {
