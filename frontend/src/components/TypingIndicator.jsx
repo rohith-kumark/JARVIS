@@ -7,7 +7,7 @@ export default function TypingIndicator() {
         <div className="typing-dot"></div>
         <div className="typing-dot"></div>
         <div className="typing-dot"></div>
-        <span className="typing-text">ANALYZING DIRECTIVE...</span>
+        <span className="typing-text">Jarvis is thinking...</span>
       </div>
     </div>
   );
