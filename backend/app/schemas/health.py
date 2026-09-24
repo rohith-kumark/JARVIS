@@ -9,5 +9,8 @@ class HealthCheckResponse(BaseModel):
     environment: str = Field(description="Runtime environment (development, production)")
     llm_provider: str = Field(description="Currently active LLM provider")
     tools_registered_count: int = Field(description="Total number of tools loaded in registry")
+    database_status: str = Field(default="ready", description="PostgreSQL connection status")
+    vector_store_status: str = Field(default="ready", description="Vector database engine status")
+    vector_documents_count: int = Field(default=0, description="Total indexed vectors in vector store")
     uptime_seconds: float = Field(description="System uptime in seconds")
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

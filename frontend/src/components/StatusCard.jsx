@@ -67,6 +67,20 @@ export function StatusCard({ health, isLoading, error, onRefresh, onClose }) {
           </div>
 
           <div className="telemetry-metric">
+            <span className="metric-label">PostgreSQL</span>
+            <span className={`metric-value font-mono ${health?.database_status === 'connected' ? 'text-green' : 'text-yellow'}`}>
+              {health?.database_status ? health.database_status.toUpperCase() : 'UNKNOWN'}
+            </span>
+          </div>
+
+          <div className="telemetry-metric">
+            <span className="metric-label">Vector Store</span>
+            <span className={`metric-value font-mono ${health?.vector_store_status === 'ready' ? 'text-green' : 'text-yellow'}`}>
+              {health?.vector_store_status ? `${health.vector_store_status.toUpperCase()} (${health.vector_documents_count ?? 0})` : 'UNKNOWN'}
+            </span>
+          </div>
+
+          <div className="telemetry-metric">
             <span className="metric-label">Registered Tools</span>
             <span className="metric-value font-mono text-cyan">
               {health?.tools_registered_count ?? 0}
