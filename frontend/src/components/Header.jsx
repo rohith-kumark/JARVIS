@@ -1,87 +1,70 @@
-import React from 'react';
-import { Activity, Cpu, Shield, Radio, Wrench } from 'lucide-react';
+import React from "react";
 
-export function Header({
-  connectionStatus,
-  llmProvider,
-  toolsCount,
-  onOpenTools,
-  onOpenHealth,
-  showHealthCard,
+export default function Header({
+  health,
+  onToggleSidebar,
+  onOpenMemory,
 }) {
-  const getStatusBadge = () => {
-    switch (connectionStatus) {
-      case 'connected':
-        return {
-          label: 'ONLINE',
-          color: 'status-connected',
-          icon: <Radio className="status-icon pulse-slow" size={14} />,
-        };
-      case 'connecting':
-      case 'reconnecting':
-        return {
-          label: 'LINKING...',
-          color: 'status-warning',
-          icon: <Activity className="status-icon spin" size={14} />,
-        };
-      default:
-        return {
-          label: 'OFFLINE',
-          color: 'status-disconnected',
-          icon: <Radio className="status-icon" size={14} />,
-        };
-    }
-  };
-
-  const status = getStatusBadge();
+  const isOnline = health?.status === "ok";
 
   return (
-    <header className="app-header">
-      <div className="header-brand">
-        <div className="reactor-core">
-          <div className="reactor-pulse"></div>
+    <header className="jarvis-header">
+      <div className="brand-section">
+        <button
+          className="btn-hud"
+          style={{ display: "none", padding: "6px" }}
+          id="mobile-toggle"
+          onClick={onToggleSidebar}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+
+        <div className="hud-arc-reactor">
+          <div className="hud-arc-inner"></div>
         </div>
-        <div className="brand-text">
-          <h1 className="brand-title">J.A.R.V.I.S.</h1>
-          <span className="brand-sub">Modular Cognitive Assistant</span>
+
+        <div>
+          <div className="brand-title">J.A.R.V.I.S.</div>
+          <div className="brand-subtitle">Personal AI Assistant &bull; Mark I</div>
         </div>
       </div>
 
-      <div className="header-center-info">
-        <div className="info-chip">
-          <Cpu size={14} className="chip-icon" />
-          <span className="chip-label">Reasoning:</span>
-          <span className="chip-value">{llmProvider ? llmProvider.toUpperCase() : 'INITIALIZING'}</span>
+      <div className="system-status-bar">
+        {/* Backend & DB Status */}
+        <div className="status-pill" title={`Database: ${health?.database || "Checking"}`}>
+          <div className={`status-dot ${isOnline ? "online" : "offline"}`}></div>
+          <span>{isOnline ? "CORE ONLINE" : "DISCONNECTED"}</span>
         </div>
 
-        <button
-          className={`info-chip interactive-chip ${showHealthCard ? 'active' : ''}`}
-          onClick={onOpenHealth}
-          title="Toggle System Health Telemetry"
-        >
-          <Activity size={14} className="chip-icon" />
-          <span className="chip-label">Diagnostics</span>
-        </button>
+        {/* Model */}
+        {health?.model && (
+          <div className="status-pill" title={`Provider: ${health.llm_provider}`}>
+            <span style={{ color: "var(--cyan-primary)" }}>MODEL:</span>
+            <span>{health.model}</span>
+          </div>
+        )}
 
-        <button
-          className="info-chip interactive-chip"
-          onClick={onOpenTools}
-          title="Open Tool Registry"
-        >
-          <Wrench size={14} className="chip-icon" />
-          <span className="chip-label">Tools:</span>
-          <span className="chip-badge">{toolsCount ?? 0}</span>
-        </button>
-      </div>
+        {/* Tools Count */}
+        {health?.tools_count !== undefined && (
+          <div className="status-pill" title={health.registered_tools?.join(", ")}>
+            <span style={{ color: "var(--cyan-primary)" }}>TOOLS:</span>
+            <span>{health.tools_count} ARMED</span>
+          </div>
+        )}
 
-      <div className="header-status">
-        <div className={`connection-pill ${status.color}`}>
-          {status.icon}
-          <span className="status-label">{status.label}</span>
-        </div>
+        {/* Memory View Button */}
+        <button className="btn-hud" onClick={onOpenMemory} title="Inspect active memory and preferences">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+          </svg>
+          <span>MEMORY HUD</span>
+        </button>
       </div>
     </header>
   );
 }
-
-export default Header;

@@ -1,40 +1,49 @@
-import time
-from fastapi import APIRouter, Request
+"""Health check and diagnostics API router."""
+
+import logging
+from fastapi import APIRouter, Depends
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from backend.app.core.config import get_settings
-from backend.app.db.session import check_db_health
-from backend.app.db.vector_store import get_vector_store
-from backend.app.schemas.health import HealthCheckResponse
-from backend.app.tools.registry import registry
+from backend.app.db.session import get_db
+from backend.app.llm.gemini_service import gemini_service
+from backend.app.schemas.health import HealthResponse
+from backend.app.tools.registry import tool_registry
 
-router = APIRouter(prefix="/api/health", tags=["Health"])
+logger = logging.getLogger(__name__)
 
-START_TIME = time.time()
+router = APIRouter(prefix="/api", tags=["Health"])
 
 
-@router.get("", response_model=HealthCheckResponse)
-async def get_health(request: Request) -> HealthCheckResponse:
-    """
-    System health check endpoint.
-    Returns status, environment, active LLM provider, registered tools count,
-    PostgreSQL connectivity status, and Vector Store status.
-    """
+@router.get("/health", response_model=HealthResponse)
+def health_check(db: Session = Depends(get_db)) -> HealthResponse:
+    """Return health status of the JARVIS backend, database, and tool registry."""
     settings = get_settings()
-    llm_provider = getattr(request.app.state, "llm_provider_name", "unknown")
-    uptime = round(time.time() - START_TIME, 2)
 
-    # Probe Database and Vector Store asynchronously
-    db_health = await check_db_health()
-    vector_store = get_vector_store()
-    vector_health = await vector_store.health_check()
+    # Check database status
+    db_status = "connected"
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        db_status = f"unhealthy: {str(e)}"
 
-    return HealthCheckResponse(
-        status="ok",
+    # Check LLM provider
+    provider = "gemini" if gemini_service.is_configured else "mock"
+    if settings.DEFAULT_LLM_PROVIDER.lower() == "mock":
+        provider = "mock (configured)"
+
+    tools = tool_registry.list_names()
+
+    return HealthResponse(
+        status="ok" if db_status == "connected" else "degraded",
+        app_name=settings.APP_NAME,
         version=settings.APP_VERSION,
         environment=settings.APP_ENV,
-        llm_provider=llm_provider,
-        tools_registered_count=len(registry.list_tools()),
-        database_status=db_health.get("status", "unknown"),
-        vector_store_status=vector_health.get("status", "unknown"),
-        vector_documents_count=vector_health.get("vector_count", 0),
-        uptime_seconds=uptime,
+        database=db_status,
+        llm_provider=provider,
+        model=settings.GEMINI_MODEL,
+        tools_count=len(tools),
+        registered_tools=tools,
     )

@@ -1,27 +1,34 @@
+"""Chat API router."""
+
 import logging
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from backend.app.core.exceptions import JarvisBaseException
+from backend.app.db.session import get_db
+from backend.app.orchestrator.orchestrator import jarvis_orchestrator
 from backend.app.schemas.chat import ChatRequest, ChatResponse
-from backend.app.services.orchestrator import AgentOrchestrator
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/chat", tags=["Chat"])
+router = APIRouter(prefix="/api", tags=["Chat"])
 
 
-@router.post("", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, req: Request) -> ChatResponse:
-    """REST endpoint for sending a message to JARVIS."""
-    orchestrator: AgentOrchestrator = req.app.state.orchestrator
-    if not orchestrator:
-        raise HTTPException(status_code=500, detail="Agent orchestrator not initialized")
-
+@router.post("/chat", response_model=ChatResponse)
+def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+    """Execute a conversational reasoning turn through the JARVIS Orchestrator."""
     try:
-        response = await orchestrator.run_loop(
+        return jarvis_orchestrator.process_message(
             user_message=request.message,
-            session_id=request.session_id,
-            caller_permission=request.caller_permission,
+            conversation_id=request.conversation_id,
+            db=db,
         )
-        return response
-    except Exception as exc:
-        logger.error(f"Error in chat processing: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(exc))
+    except JarvisBaseException as e:
+        logger.error(f"Domain error processing chat message: {e.message}")
+        raise HTTPException(status_code=400, detail=e.message)
+    except Exception as e:
+        logger.error(f"Unexpected error in chat endpoint: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred while processing your request: {str(e)}",
+        )

@@ -1,142 +1,217 @@
-# J.A.R.V.I.S. (Modular AI Personal Assistant)
+# J.A.R.V.I.S. — Personal AI Assistant (Phase 1)
 
-> **Core Philosophy**: Gemini is the reasoning/decision-making layer. Python is the execution layer. Every external action happens exclusively through a controlled tool.
-
----
-
-## 🏛 System Architecture Overview
-
-```
-                                  +------------------------------------+
-                                  |         React + Vite (UI)          |
-                                  |  - Presentation Components         |
-                                  |  - Custom React Hooks              |
-                                  |  - Isolated Agent Service Layer    |
-                                  +-----------------+------------------+
-                                                    |
-                                     WebSocket /    |  REST
-                                     HTTP           v
-+---------------------------------------------------+---------------------------------------------------+
-| BACKEND CORE (FastAPI)                                                                                |
-|                                                                                                       |
-|  +--------------------------+          +-------------------------+          +----------------------+  |
-|  |       API Routers        | -------> |    Agent Orchestrator   | -------> |    LLM Abstraction   |  |
-|  | - /api/health            |          |  (Reasoning & Loop)     |          |  - BaseLLMClient     |  |
-|  | - /api/tools             |          +------------+------------+          |  - GeminiLLMClient   |  |
-|  | - /api/chat              |                       |                       |  - MockLLMClient     |  |
-|  | - /api/ws                |                       |                       +----------------------+  |
-|  +--------------------------+                       v                                                 |
-|                                        +-------------------------+                                    |
-|                                        |  Central Tool Registry  |                                    |
-|                                        |  - Permission Clearance |                                    |
-|                                        |  - Schema Validation    |                                    |
-|                                        |  - Auto-Discovery       |                                    |
-|                                        +------------+------------+                                    |
-|                                                     |                                                 |
-|                                                     v                                                 |
-|                                        +-------------------------+                                    |
-|                                        |     Controlled Tools    |                                    |
-|                                        |  - get_system_info      |                                    |
-|                                        |  - [Future Tools...]    |                                    |
-|                                        +-------------------------+                                    |
-+-------------------------------------------------------------------------------------------------------+
-```
+JARVIS (Just A Rather Very Intelligent System) is a modular personal AI assistant engineered with a high-performance Python FastAPI backend, Google Gemini LLM reasoning engine, dynamic Python tool execution, short-term SQLite memory, and a React + Vite sci-fi HUD frontend.
 
 ---
 
-## 🚀 Quick Start Guide
+## Architecture
+
+The system follows a strict, controlled execution pipeline:
+
+```
+React Frontend
+      ↓ (REST HTTP)
+FastAPI Backend
+      ↓
+JARVIS Orchestrator
+      ↓
+Gemini LLM (google-genai)
+      ↓ (Function Calling)
+Tool Manager
+      ↓
+Individual Python Tools (calculator, get_current_time)
+      ↓
+SQLite Database (conversations, messages, memories, preferences, tool_executions)
+```
+
+### Purpose of Major Modules
+
+| Directory / Module | Purpose |
+| :--- | :--- |
+| `backend/app/main.py` | FastAPI application initialization, CORS middleware, lifespan startup/shutdown hooks, and centralized error handling. |
+| `backend/app/core/config.py` | Pydantic `BaseSettings` that validates and loads configuration from `.env`. |
+| `backend/app/core/logging.py` | Centralized structured logging configuration. |
+| `backend/app/core/exceptions.py` | Custom domain exceptions (`ToolSecurityError`, `LLMServiceError`, `ConversationNotFoundError`). |
+| `backend/app/db/models.py` | SQLAlchemy ORM models for `Conversation`, `Message`, `Memory`, `UserPreference`, and `ToolExecution`. |
+| `backend/app/db/session.py` | Database engine and sessionmaker abstraction. Modular design allows seamless replacement of SQLite with PostgreSQL. |
+| `backend/app/tools/base.py` | Protocol and `BaseTool` abstract base class defining standard tool interface (`name`, `description`, `parameters`, `execute()`). |
+| `backend/app/tools/registry.py` | Dynamic `ToolRegistry` allowing runtime tool discovery, registration, and conversion into Gemini function declarations. |
+| `backend/app/tools/manager.py` | `ToolManager` providing execution containment, safety boundaries, latency timing, and database auditing. |
+| `backend/app/tools/builtin/calculator.py` | Safe AST-based mathematical evaluator. **Never** executes arbitrary Python or OS code; only permits safe arithmetic AST nodes. |
+| `backend/app/tools/builtin/current_time.py` | Safe system time and date lookup tool. |
+| `backend/app/memory/conversation_manager.py` | Handles conversation session creation, message persistence, and chronological history retrieval. |
+| `backend/app/memory/memory_manager.py` | Manages short-term contextual memories and user preferences, formatting context injection for the LLM prompt. |
+| `backend/app/llm/gemini_service.py` | Wrapper for official `google-genai` SDK. Binds registered tools, creates multi-turn chats, handles function calling loops, and features mock fallback for offline operation. |
+| `backend/app/orchestrator/orchestrator.py` | Central conductor coordinating memory retrieval, conversation loading, Gemini reasoning, tool execution, and response storage. |
+| `backend/app/api/routes/` | REST endpoints: `/api/chat`, `/api/health`, `/api/conversations`, `/api/memory`. |
+| `frontend/src/` | React + Vite client featuring dark cyan HUD interface, message streaming, tool call execution badges, and memory inspection. |
+
+---
+
+## Installation & Setup
 
 ### Prerequisites
+
 - Python 3.10+
 - Node.js 18+ and npm
 
 ### 1. Backend Setup
 
 ```bash
-# Navigate to workspace root
+# Navigate to project root
 cd /home/rk/Documents/Jarvis
 
-# Create and activate virtual environment
+# Create virtual environment if not already created
 python3 -m venv .venv
+
+# Activate virtual environment
 source .venv/bin/activate
 
 # Install dependencies
 pip install -r backend/requirements.txt
-
-# Configure environment variables
-cp backend/.env.example backend/.env
-# Edit backend/.env and optionally add your GEMINI_API_KEY
 ```
 
-> **Note on Offline Development**: If `GEMINI_API_KEY` is omitted, JARVIS automatically boots in `MockLLMClient` mode, providing full offline testing and simulation of reasoning and tool calls!
+### 2. Environment Configuration
 
-To run the backend server:
+Copy the example environment file and configure your Google Gemini API key:
+
 ```bash
-python backend/run.py
-# Server starts at http://localhost:8000
-# API docs available at http://localhost:8000/docs
+cp backend/.env.example .env
 ```
 
-To run the automated backend test suite:
-```bash
-pytest -v backend/tests
+Open `.env` and provide your settings:
+
+```dotenv
+APP_NAME="JARVIS AI Assistant"
+APP_ENV="development"
+DEBUG=true
+
+HOST="0.0.0.0"
+PORT=8000
+
+CORS_ORIGINS=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"]
+DATABASE_URL="sqlite:///./jarvis.db"
+
+# Google Gemini API Configuration (from https://aistudio.google.com/)
+GEMINI_API_KEY="your_gemini_api_key_here"
+GEMINI_MODEL="gemini-3.6-flash"
+DEFAULT_LLM_PROVIDER="gemini"
+
+LOG_LEVEL="INFO"
 ```
 
----
-
-### 2. Frontend Setup
+### 3. Frontend Setup
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
+cd ..
+```
 
-# Configure environment variables
-cp .env.example .env
+---
 
-# Run Vite development server
+## Running the Application
+
+### Start the Backend (FastAPI)
+
+```bash
+source .venv/bin/activate
+python backend/run.py
+```
+*Backend runs on `http://127.0.0.1:8000` (API docs available at `http://127.0.0.1:8000/docs`).*
+
+### Start the Frontend (React + Vite)
+
+```bash
+cd frontend
 npm run dev
-# Interface opens at http://localhost:5173
 ```
+*Frontend runs on `http://localhost:5173`.*
 
 ---
 
-## 🛠 Adding New Tools Without Modifying the Core Orchestrator
+## Testing
 
-The system uses an auto-discovering tool registry. To add a new tool:
+Run the automated test suite using `pytest`:
 
-1. Create a new Python file in `backend/app/tools/builtin/`, e.g., `web_search.py`.
-2. Inherit from `BaseTool` and decorate with `@register_tool`:
-
-```python
-from pydantic import BaseModel, Field
-from backend.app.tools.base import BaseTool, PermissionLevel
-from backend.app.tools.registry import register_tool
-
-class SearchArgs(BaseModel):
-    query: str = Field(description="The search query string")
-
-@register_tool
-class WebSearchTool(BaseTool):
-    name = "web_search"
-    description = "Searches the web for given keywords and returns top summaries"
-    permission_level = PermissionLevel.READ_ONLY
-    args_schema = SearchArgs
-
-    async def _run(self, query: str):
-        # Implementation logic goes here
-        return {"query": query, "results": ["Summary 1", "Summary 2"]}
+```bash
+source .venv/bin/activate
+pytest -v
 ```
 
-3. **That's it!** Upon startup, `registry.discover_builtin_tools()` dynamically loads your tool, generates its JSON Schema, advertises it to the LLM, and enforces permissions automatically.
+The test suite covers:
+- Safe AST calculator evaluation & security containment (blocking `eval`, `__import__`, variables, attributes).
+- Current time formatting.
+- SQLite ORM models and cascaded deletes.
+- Dynamic tool registration and manager execution.
+- Complete chat orchestration, conversation history, and memory inspection.
+- Health-check endpoint diagnostics.
 
 ---
 
-## 🔒 Security Clearance Levels
+## API Endpoints
 
-Every tool declares a minimum permission rank:
-- `READ_ONLY`: Passive inspection (e.g., system diagnostics, memory queries).
-- `EXECUTE`: Standard external actions (e.g., calculations, opening local apps).
-- `SENSITIVE`: Actions modifying external state (e.g., sending emails, writing files).
-- `ADMIN`: Full authority (e.g., process termination, credential management, system settings).
+### 1. `POST /api/chat`
+Process user message through JARVIS Orchestrator.
+- **Request**:
+  ```json
+  {
+    "message": "What is 45 * 12?",
+    "conversation_id": null
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "response": "45 * 12 = 540",
+    "conversation_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "tool_calls": [
+      {
+        "tool_name": "calculator",
+        "arguments": { "expression": "45 * 12" },
+        "result": { "result": 540 },
+        "status": "success",
+        "execution_time_ms": 0.42
+      }
+    ],
+    "created_at": "2026-09-24T21:00:00Z"
+  }
+  ```
+
+### 2. `GET /api/health`
+System diagnostics and status report.
+- **Response**:
+  ```json
+  {
+    "status": "ok",
+    "app_name": "JARVIS AI Assistant",
+    "version": "1.0.0",
+    "environment": "development",
+    "database": "connected",
+    "llm_provider": "gemini",
+    "model": "gemini-3.6-flash",
+    "tools_count": 2,
+    "registered_tools": ["get_current_time", "calculator"]
+  }
+  ```
+
+### 3. `GET /api/conversations`
+List all conversation sessions.
+
+### 4. `POST /api/conversations`
+Create a new conversation session.
+
+### 5. `GET /api/conversations/{id}`
+Retrieve complete message history for a conversation.
+
+### 6. `GET /api/memory`
+Retrieve short-term contextual memories and user preferences.
+
+---
+
+## Security Safeguards
+
+- **No Arbitrary Python Execution**: The calculator tool parses input into an Abstract Syntax Tree (AST) and evaluates only strictly whitelisted numerical constants and binary operators. Any attempt to use identifiers, imports, calls, attributes, or functions is blocked with `ToolSecurityError`.
+- **API Key Secrecy**: The Gemini API key is loaded only on the FastAPI backend from `.env` and is never transmitted or exposed to the client.
+- **Strict Input Validation**: All endpoints validate request structures and data limits with Pydantic.
+- **Safe Isolation**: Operating-system shell commands and arbitrary execution capabilities are completely omitted in Phase 1.

@@ -1,69 +1,54 @@
+"""Main FastAPI application entry point for JARVIS AI assistant."""
+
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.app.api.routes import chat, health, tools, ws
+from backend.app.api.routes import chat_router, conversations_router, health_router, memory_router
 from backend.app.core.config import get_settings
 from backend.app.core.exceptions import JarvisBaseException
 from backend.app.core.logging import setup_logging
-from backend.app.llm.factory import create_llm_client
-from backend.app.services.orchestrator import AgentOrchestrator
-from backend.app.tools.registry import registry
+from backend.app.db.session import init_db
+from backend.app.tools.registry import tool_registry
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan context manager for startup and shutdown hooks."""
+    """Lifespan context manager handling application startup and shutdown events."""
     settings = get_settings()
 
-    # 1. Initialize logging
-    setup_logging(level=settings.LOG_LEVEL, structured=(settings.APP_ENV == "production"))
+    # 1. Setup logging
+    setup_logging(level=settings.LOG_LEVEL)
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION} [{settings.APP_ENV}]")
 
-    # 2. Auto-discover registered builtin tools
-    registry.discover_builtin_tools()
-    logger.info(f"Loaded {len(registry.list_tools())} tools into central registry")
+    # 2. Initialize database schema
+    init_db()
 
-    # 3. Initialize LLM abstraction
-    llm_client = create_llm_client(settings)
-    app.state.llm_client = llm_client
-    app.state.llm_provider_name = llm_client.provider_name
-
-    # 4. Initialize Agent Orchestrator service
-    orchestrator = AgentOrchestrator(llm_client=llm_client, tool_registry=registry)
-    app.state.orchestrator = orchestrator
-    logger.info(f"Agent Orchestrator initialized with provider: {llm_client.provider_name}")
+    # 3. Register default safe demonstration tools
+    tool_registry.register_builtins()
+    logger.info(f"Loaded {len(tool_registry.list_tools())} tools into registry: {tool_registry.list_names()}")
 
     yield
 
-    logger.info("Shutting down JARVIS Core services...")
+    logger.info("Shutting down JARVIS AI Assistant backend...")
 
 
-def create_application() -> FastAPI:
-    """FastAPI application factory."""
+def create_app() -> FastAPI:
+    """Application factory for FastAPI."""
     settings = get_settings()
-
-    # Pre-discover tools and initialize baseline state
-    registry.discover_builtin_tools()
-    initial_llm = create_llm_client(settings)
-    initial_orchestrator = AgentOrchestrator(llm_client=initial_llm, tool_registry=registry)
 
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
-        description="Modular Personal AI Assistant - Core Reasoning and Controlled Execution Engine",
+        description="JARVIS Personal AI Assistant - Phase 1 Core Reasoning and Tool Execution Engine",
         lifespan=lifespan,
     )
 
-    app.state.llm_client = initial_llm
-    app.state.llm_provider_name = initial_llm.provider_name
-    app.state.orchestrator = initial_orchestrator
-
-    # CORS configuration
+    # Configure CORS for React frontend communication
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
@@ -72,10 +57,10 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Global Exception Handlers
+    # Domain exception handler
     @app.exception_handler(JarvisBaseException)
     async def jarvis_exception_handler(request: Request, exc: JarvisBaseException):
-        logger.error(f"Jarvis domain exception: {exc.message}", exc_info=True)
+        logger.error(f"Domain exception: {exc.message}", exc_info=True)
         return JSONResponse(
             status_code=400,
             content={
@@ -85,6 +70,7 @@ def create_application() -> FastAPI:
             },
         )
 
+    # Global unhandled exception handler
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.error(f"Unhandled server error: {exc}", exc_info=True)
@@ -96,13 +82,13 @@ def create_application() -> FastAPI:
             },
         )
 
-    # Include API Routers
-    app.include_router(health.router)
-    app.include_router(tools.router)
-    app.include_router(chat.router)
-    app.include_router(ws.router)
+    # Register API routers
+    app.include_router(health_router)
+    app.include_router(chat_router)
+    app.include_router(conversations_router)
+    app.include_router(memory_router)
 
     return app
 
 
-app = create_application()
+app = create_app()

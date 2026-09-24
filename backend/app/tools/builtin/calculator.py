@@ -1,16 +1,16 @@
+"""Demonstration tool: safe AST-based calculator.
+
+Never uses eval() or exec(). Only parses and evaluates valid arithmetic AST nodes.
+"""
+
 import ast
-import logging
-import math
 import operator
-from typing import Any, Dict
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Union
+from backend.app.core.exceptions import ToolSecurityError
+from backend.app.tools.base import BaseTool
 
-from backend.app.tools.base import BaseTool, PermissionLevel, ToolCategory
-from backend.app.tools.registry import register_tool
-
-logger = logging.getLogger(__name__)
-
-ALLOWED_OPERATORS = {
+# Supported binary operators
+SAFE_OPERATORS = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -18,138 +18,99 @@ ALLOWED_OPERATORS = {
     ast.FloorDiv: operator.floordiv,
     ast.Mod: operator.mod,
     ast.Pow: operator.pow,
-    ast.USub: operator.neg,
+}
+
+# Supported unary operators
+SAFE_UNARY_OPERATORS = {
     ast.UAdd: operator.pos,
-}
-
-ALLOWED_FUNCTIONS = {
-    "sqrt": math.sqrt,
-    "sin": math.sin,
-    "cos": math.cos,
-    "tan": math.tan,
-    "asin": math.asin,
-    "acos": math.acos,
-    "atan": math.atan,
-    "log": math.log,
-    "log10": math.log10,
-    "log2": math.log2,
-    "exp": math.exp,
-    "abs": abs,
-    "round": round,
-    "ceil": math.ceil,
-    "floor": math.floor,
-}
-
-ALLOWED_CONSTANTS = {
-    "pi": math.pi,
-    "e": math.e,
-    "tau": math.tau,
+    ast.USub: operator.neg,
 }
 
 
-def _safe_evaluate_ast(node: ast.AST) -> float:
-    """
-    Recursively evaluate an AST expression with strict whitelisting.
-    Never executes arbitrary Python or accesses globals/system modules.
-    """
-    if isinstance(node, ast.Expression):
-        return _safe_evaluate_ast(node.body)
-
-    elif isinstance(node, ast.Constant):
-        if isinstance(node.value, bool):
-            raise ValueError("Boolean constants are not allowed in calculations.")
-        if isinstance(node.value, int):
-            return node.value
-        if isinstance(node.value, float):
-            return node.value
-        raise ValueError(f"Constant of type '{type(node.value).__name__}' is not allowed in calculations.")
-
-    elif isinstance(node, ast.BinOp):
-        op_type = type(node.op)
-        if op_type not in ALLOWED_OPERATORS:
-            raise ValueError(f"Operator '{op_type.__name__}' is not allowed.")
-
-        left_val = _safe_evaluate_ast(node.left)
-        right_val = _safe_evaluate_ast(node.right)
-
-        # DoS safeguard against astronomical powers
-        if op_type is ast.Pow and (abs(right_val) > 10000 or abs(left_val) > 1e100):
-            raise ValueError("Exponent or base exceeds safe computational limits.")
-
-        if op_type in (ast.Div, ast.FloorDiv, ast.Mod) and right_val == 0:
-            raise ZeroDivisionError("Division or modulo by zero is undefined.")
-
-        return ALLOWED_OPERATORS[op_type](left_val, right_val)
-
-    elif isinstance(node, ast.UnaryOp):
-        op_type = type(node.op)
-        if op_type not in ALLOWED_OPERATORS:
-            raise ValueError(f"Unary operator '{op_type.__name__}' is not allowed.")
-        return ALLOWED_OPERATORS[op_type](_safe_evaluate_ast(node.operand))
-
-    elif isinstance(node, ast.Call):
-        if not isinstance(node.func, ast.Name) or node.func.id not in ALLOWED_FUNCTIONS:
-            func_name = getattr(node.func, "id", str(node.func))
-            raise ValueError(f"Function call to '{func_name}' is forbidden. Only safe math functions are permitted.")
-
-        func = ALLOWED_FUNCTIONS[node.func.id]
-        args = [_safe_evaluate_ast(arg) for arg in node.args]
-        return func(*args)
-
-    elif isinstance(node, ast.Name):
-        if node.id not in ALLOWED_CONSTANTS:
-            raise ValueError(f"Variable or identifier '{node.id}' is undefined or forbidden.")
-        return ALLOWED_CONSTANTS[node.id]
-
-    else:
-        raise ValueError(f"Forbidden or unsupported syntax element: {type(node).__name__}")
-
-
-class CalculatorArgs(BaseModel):
-    expression: str = Field(
-        description="Mathematical expression to evaluate, e.g. '2 * (10 + 5)', 'sqrt(144) + 12', '(100 - 25) / 5'"
-    )
-
-
-@register_tool
 class CalculatorTool(BaseTool):
-    """
-    Safely calculates mathematical expressions.
-    Safeguards: Uses dedicated AST evaluation without eval/exec to completely prevent arbitrary code execution.
-    """
-    name = "calculator"
-    description = (
-        "Perform exact mathematical calculations for arithmetic expressions, powers, percentages, "
-        "and standard math functions (sqrt, sin, cos, tan, log, abs, round, ceil, floor, pi, e). "
-        "Strictly safe: does not execute arbitrary code."
+    """Safely evaluates arithmetic expressions using AST parsing."""
+
+    name: str = "calculator"
+    description: str = (
+        "Safely evaluate a mathematical expression (addition, subtraction, multiplication, "
+        "division, integer division, modulo, exponentiation). Example expressions: "
+        "'45 * 12', '(100 - 25) / 5', '2 ** 8'. Do not pass Python variables or functions."
     )
-    permission_level = PermissionLevel.READ_ONLY
-    category = ToolCategory.READ_ONLY
-    args_schema = CalculatorArgs
-    timeout_seconds = 5.0
+    parameters: Dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "expression": {
+                "type": "string",
+                "description": "The arithmetic expression to safely compute.",
+            }
+        },
+        "required": ["expression"],
+    }
 
-    async def _run(self, expression: str) -> Dict[str, Any]:
-        expr = expression.strip()
-        if not expr:
-            raise ValueError("Expression cannot be empty.")
+    def _eval_node(self, node: ast.AST) -> Union[int, float]:
+        """Recursively evaluate an AST node strictly against safe whitelisted types."""
+        if isinstance(node, ast.Expression):
+            return self._eval_node(node.body)
 
-        if len(expr) > 500:
-            raise ValueError("Expression exceeds maximum length of 500 characters.")
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float)):
+                return node.value
+            raise ToolSecurityError(f"Security error: Disallowed constant type '{type(node.value).__name__}'")
+
+        if isinstance(node, ast.BinOp):
+            op_type = type(node.op)
+            if op_type not in SAFE_OPERATORS:
+                raise ToolSecurityError(f"Security error: Disallowed operator '{op_type.__name__}'")
+
+            left = self._eval_node(node.left)
+            right = self._eval_node(node.right)
+
+            # Division by zero guard
+            if op_type in (ast.Div, ast.FloorDiv, ast.Mod) and right == 0:
+                raise ValueError("Math error: Division or modulo by zero")
+
+            # Exponential DoS guard
+            if op_type is ast.Pow:
+                if abs(right) > 1000 or abs(left) > 1000000:
+                    raise ValueError("Math error: Exponentiation operands exceed safe computation limits")
+
+            return SAFE_OPERATORS[op_type](left, right)
+
+        if isinstance(node, ast.UnaryOp):
+            op_type = type(node.op)
+            if op_type not in SAFE_UNARY_OPERATORS:
+                raise ToolSecurityError(f"Security error: Disallowed unary operator '{op_type.__name__}'")
+            operand = self._eval_node(node.operand)
+            return SAFE_UNARY_OPERATORS[op_type](operand)
+
+        # Explicitly reject calls, names, attributes, imports, subscripts, etc.
+        raise ToolSecurityError(
+            f"Security error: Disallowed expression syntax '{type(node).__name__}'. "
+            "Only pure arithmetic expressions are allowed."
+        )
+
+    def execute(self, expression: str, **kwargs: Any) -> Dict[str, Any]:
+        """Parse and safely compute the arithmetic expression."""
+        if not expression or not expression.strip():
+            raise ValueError("Expression cannot be empty")
+
+        cleaned = expression.strip()
+        if len(cleaned) > 250:
+            raise ValueError("Expression length exceeds maximum allowed length of 250 characters")
 
         try:
-            tree = ast.parse(expr, mode="eval")
-        except SyntaxError as syn_err:
-            raise ValueError(f"Invalid mathematical syntax in '{expr}': {syn_err.msg}") from syn_err
+            tree = ast.parse(cleaned, mode="eval")
+            result = self._eval_node(tree)
+            # If the float has no fractional part, convert to int for cleaner output (e.g. 540.0 -> 540)
+            if isinstance(result, float) and result.is_integer():
+                result = int(result)
 
-        computed_result = _safe_evaluate_ast(tree)
-
-        # Format integer results without unnecessary .0
-        if isinstance(computed_result, float) and computed_result.is_integer():
-            formatted_result = int(computed_result)
-        else:
-            formatted_result = round(computed_result, 10)
-
-        return {
-            "expression": expr,
-            "result": formatted_result,
-        }
+            return {
+                "expression": cleaned,
+                "result": result,
+                "formatted": f"{cleaned} = {result}",
+            }
+        except (SyntaxError, ValueError, ToolSecurityError) as e:
+            raise e
+        except Exception as e:
+            raise ValueError(f"Failed to evaluate expression: {str(e)}")

@@ -1,28 +1,8 @@
-from datetime import datetime, timezone
-from sqlalchemy import DateTime
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+"""Database base declarative class."""
+
+from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
-    """
-    SQLAlchemy 2.0 base class for all relational database entities.
-    Inheriting models register themselves into Base.metadata automatically.
-    """
+    """Base class for all SQLAlchemy ORM models."""
     pass
-
-
-class TimestampMixin:
-    """
-    Reusable mixin providing created_at and updated_at UTC timestamps.
-    """
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )

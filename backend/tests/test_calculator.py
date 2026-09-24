@@ -1,94 +1,70 @@
+"""Tests for the safe AST calculator tool."""
+
 import pytest
+from backend.app.core.exceptions import ToolSecurityError
 from backend.app.tools.builtin.calculator import CalculatorTool
-from backend.app.tools.base import PermissionLevel
 
 
-@pytest.fixture
-def calc_tool():
-    return CalculatorTool()
+def test_basic_arithmetic():
+    calc = CalculatorTool()
+
+    assert calc.execute("2 + 2")["result"] == 4
+    assert calc.execute("10 - 4")["result"] == 6
+    assert calc.execute("6 * 7")["result"] == 42
+    assert calc.execute("10 / 2")["result"] == 5
+    assert calc.execute("10 // 3")["result"] == 3
+    assert calc.execute("10 % 3")["result"] == 1
+    assert calc.execute("2 ** 8")["result"] == 256
 
 
-@pytest.mark.asyncio
-async def test_calculator_basic_arithmetic(calc_tool):
-    """Test basic arithmetic calculations with proper precedence."""
-    res1 = await calc_tool.execute(expression="2 + 2 * 10")
-    assert res1.success is True
-    assert res1.data["result"] == 22
+def test_complex_expressions():
+    calc = CalculatorTool()
 
-    res2 = await calc_tool.execute(expression="(100 - 25) / 5")
-    assert res2.success is True
-    assert res2.data["result"] == 15
-
-    res3 = await calc_tool.execute(expression="17 % 5")
-    assert res3.success is True
-    assert res3.data["result"] == 2
-
-    res4 = await calc_tool.execute(expression="2 ** 8")
-    assert res4.success is True
-    assert res4.data["result"] == 256
+    assert calc.execute("(5 + 3) * (10 - 2)")["result"] == 64
+    assert calc.execute("-5 + 15")["result"] == 10
+    assert calc.execute("-(4 * 5)")["result"] == -20
+    assert calc.execute("3.5 * 2")["result"] == 7
 
 
-@pytest.mark.asyncio
-async def test_calculator_math_functions_and_constants(calc_tool):
-    """Test standard mathematical functions and constants."""
-    res1 = await calc_tool.execute(expression="sqrt(144) + 12")
-    assert res1.success is True
-    assert res1.data["result"] == 24
+def test_division_by_zero():
+    calc = CalculatorTool()
 
-    res2 = await calc_tool.execute(expression="abs(-42) + sin(0)")
-    assert res2.success is True
-    assert res2.data["result"] == 42
+    with pytest.raises(ValueError, match="zero"):
+        calc.execute("10 / 0")
 
-    res3 = await calc_tool.execute(expression="log10(100)")
-    assert res3.success is True
-    assert res3.data["result"] == 2
+    with pytest.raises(ValueError, match="zero"):
+        calc.execute("5 // 0")
 
-    res4 = await calc_tool.execute(expression="round(pi, 4)")
-    assert res4.success is True
-    assert res4.data["result"] == 3.1416
+    with pytest.raises(ValueError, match="zero"):
+        calc.execute("7 % 0")
 
 
-@pytest.mark.asyncio
-async def test_calculator_zero_division(calc_tool):
-    """Test that zero division is safely caught without crashing."""
-    res = await calc_tool.execute(expression="100 / 0")
-    assert res.success is False
-    assert "division or modulo by zero" in res.error.lower()
+def test_security_blocks_code_execution():
+    calc = CalculatorTool()
+
+    # Block imports
+    with pytest.raises(ToolSecurityError):
+        calc.execute("__import__('os').system('echo pwned')")
+
+    # Block builtin function calls
+    with pytest.raises(ToolSecurityError):
+        calc.execute("open('/etc/passwd').read()")
+
+    # Block variable access
+    with pytest.raises(ToolSecurityError):
+        calc.execute("x + 1")
+
+    # Block string evaluation
+    with pytest.raises(ToolSecurityError):
+        calc.execute("'hello' + 'world'")
+
+    # Block attribute lookups
+    with pytest.raises(ToolSecurityError):
+        calc.execute("(1).__class__.__bases__")
 
 
-@pytest.mark.asyncio
-async def test_calculator_arbitrary_code_injection_prevention(calc_tool):
-    """
-    CRITICAL SECURITY TEST:
-    Verify that arbitrary Python code execution attempts are strictly blocked.
-    """
-    injection_payloads = [
-        "__import__('os').system('echo pwned')",
-        "open('/etc/passwd').read()",
-        "eval('2 + 2')",
-        "exec('x = 1')",
-        "globals()",
-        "locals()",
-        "__builtins__",
-        "import os",
-        "[x for x in [1, 2]]",
-        "lambda x: x + 1",
-    ]
+def test_dos_exponentiation_guard():
+    calc = CalculatorTool()
 
-    for payload in injection_payloads:
-        res = await calc_tool.execute(expression=payload)
-        assert res.success is False, f"Payload should have been rejected: {payload}"
-        assert (
-            "forbidden" in res.error.lower()
-            or "invalid" in res.error.lower()
-            or "undefined" in res.error.lower()
-            or "syntax" in res.error.lower()
-        )
-
-
-@pytest.mark.asyncio
-async def test_calculator_dos_large_power_prevention(calc_tool):
-    """Verify denial of service prevention against astronomically large powers."""
-    res = await calc_tool.execute(expression="2 ** 100000")
-    assert res.success is False
-    assert "exceeds safe computational limits" in res.error.lower()
+    with pytest.raises(ValueError, match="exceed"):
+        calc.execute("9 ** 999999")

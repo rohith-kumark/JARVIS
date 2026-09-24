@@ -1,159 +1,55 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Bot, User, Wrench, CheckCircle, AlertTriangle, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import React, { useEffect, useRef } from "react";
+import MessageItem from "./MessageItem";
+import TypingIndicator from "./TypingIndicator";
 
-function ToolCard({ tool }) {
-  const [expanded, setExpanded] = useState(false);
+export default function ChatWindow({ messages, loading, onSelectPrompt }) {
+  const bottomRef = useRef(null);
 
-  return (
-    <div className={`tool-execution-card ${tool.success ? 'tool-success' : 'tool-failed'}`}>
-      <div className="tool-card-summary" onClick={() => setExpanded(!expanded)}>
-        <div className="tool-card-left">
-          <Wrench size={14} className="tool-icon" />
-          <span className="tool-name font-mono">{tool.tool_name}</span>
-          {tool.execution_time_ms !== undefined && (
-            <span className="tool-time font-mono">{tool.execution_time_ms}ms</span>
-          )}
-        </div>
-        <div className="tool-card-right">
-          {tool.success ? (
-            <span className="status-badge success">
-              <CheckCircle size={12} /> Succeeded
-            </span>
-          ) : (
-            <span className="status-badge error">
-              <AlertTriangle size={12} /> Failed
-            </span>
-          )}
-          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </div>
-      </div>
-
-      {expanded && (
-        <div className="tool-card-detail">
-          {tool.arguments && Object.keys(tool.arguments).length > 0 && (
-            <div className="detail-section">
-              <span className="detail-label">Arguments:</span>
-              <pre className="detail-json font-mono">{JSON.stringify(tool.arguments, null, 2)}</pre>
-            </div>
-          )}
-          <div className="detail-section">
-            <span className="detail-label">{tool.success ? 'Output Data:' : 'Error Message:'}</span>
-            <pre className="detail-json font-mono">
-              {tool.success ? JSON.stringify(tool.data, null, 2) : tool.error}
-            </pre>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function ChatWindow({ messages, isThinking, activeTool }) {
-  const messagesEndRef = useRef(null);
-
+  // Auto-scroll on new message or loading change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isThinking, activeTool]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  const defaultSuggestions = [
+    { title: "Query Current Time", prompt: "What is the current time and date?" },
+    { title: "Safe Math Calculation", prompt: "Calculate (450 * 12) / 5 using the calculator." },
+    { title: "System Capabilities", prompt: "What tools and capabilities do you currently have registered?" },
+    { title: "Compound Query", prompt: "What time is it in UTC, and what is 2 to the power of 10?" },
+  ];
 
   return (
-    <div className="chat-window">
-      <div className="chat-messages-container">
-        {messages.map((msg) => {
-          const isUser = msg.sender === 'user';
-          const isSystem = msg.sender === 'system';
-
-          return (
-            <div
-              key={msg.id}
-              className={`message-row ${isUser ? 'msg-user-row' : isSystem ? 'msg-system-row' : 'msg-agent-row'}`}
-            >
-              <div className="avatar-col">
-                <div className={`avatar-bubble ${msg.sender}-avatar`}>
-                  {isUser ? <User size={16} /> : isSystem ? <Sparkles size={16} /> : <Bot size={16} />}
-                </div>
-              </div>
-
-              <div className="message-content-col">
-                <div className="message-meta">
-                  <span className="sender-name">
-                    {isUser ? 'Commander' : isSystem ? 'System Protocol' : 'JARVIS'}
-                  </span>
-                  {msg.timestamp && (
-                    <span className="message-time">
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </span>
-                  )}
-                  {msg.llmProvider && (
-                    <span className="provider-tag">{msg.llmProvider}</span>
-                  )}
-                </div>
-
-                {/* Render any tools executed during this turn */}
-                {msg.toolExecutions && msg.toolExecutions.length > 0 && (
-                  <div className="tool-executions-list">
-                    <span className="tools-heading">Controlled Tool Invocations:</span>
-                    {msg.toolExecutions.map((tool, idx) => (
-                      <ToolCard key={idx} tool={tool} />
-                    ))}
-                  </div>
-                )}
-
-                <div className={`message-bubble ${msg.isError ? 'bubble-error' : ''}`}>
-                  <p className="message-text">{msg.text}</p>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Live Active Tool Execution State */}
-        {activeTool && (
-          <div className="message-row msg-agent-row">
-            <div className="avatar-col">
-              <div className="avatar-bubble agent-avatar">
-                <Bot size={16} />
-              </div>
-            </div>
-            <div className="message-content-col">
-              <div className="message-meta">
-                <span className="sender-name">JARVIS Execution Engine</span>
-              </div>
-              <div className="tool-execution-active">
-                <div className="active-spinner"></div>
-                <div className="active-text">
-                  <span>Executing tool: <strong className="font-mono text-cyan">{activeTool.name}</strong></span>
-                  {activeTool.arguments && Object.keys(activeTool.arguments).length > 0 && (
-                    <span className="active-args font-mono">{JSON.stringify(activeTool.arguments)}</span>
-                  )}
-                </div>
-              </div>
-            </div>
+    <div className="messages-container">
+      {messages.length === 0 ? (
+        <div className="empty-chat-state">
+          <div className="hud-arc-reactor" style={{ width: "64px", height: "64px", margin: "0 auto" }}>
+            <div className="hud-arc-inner" style={{ width: "28px", height: "28px" }}></div>
           </div>
-        )}
+          <h2>J.A.R.V.I.S. ONLINE</h2>
+          <p>Phase 1 Orchestration Engine Active. Ready for Operator Directives.</p>
 
-        {/* Agent Thinking Indicator */}
-        {isThinking && !activeTool && (
-          <div className="message-row msg-agent-row">
-            <div className="avatar-col">
-              <div className="avatar-bubble agent-avatar">
-                <Bot size={16} />
+          <div className="empty-suggestions">
+            {defaultSuggestions.map((item, idx) => (
+              <div
+                key={idx}
+                className="suggestion-card"
+                onClick={() => onSelectPrompt(item.prompt)}
+              >
+                <div style={{ color: "var(--cyan-primary)", fontWeight: "600", marginBottom: "4px" }}>
+                  {item.title}
+                </div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>
+                  "{item.prompt}"
+                </div>
               </div>
-            </div>
-            <div className="message-content-col">
-              <div className="thinking-indicator">
-                <span className="thinking-dot"></span>
-                <span className="thinking-dot"></span>
-                <span className="thinking-dot"></span>
-                <span className="thinking-label">Reasoning neural sequence...</span>
-              </div>
-            </div>
+            ))}
           </div>
-        )}
+        </div>
+      ) : (
+        messages.map((msg, index) => <MessageItem key={msg.id || index} message={msg} />)
+      )}
 
-        <div ref={messagesEndRef} />
-      </div>
+      {loading && <TypingIndicator />}
+      <div ref={bottomRef} />
     </div>
   );
 }
-
-export default ChatWindow;

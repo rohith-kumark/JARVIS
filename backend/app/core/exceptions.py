@@ -1,49 +1,37 @@
+"""Domain exceptions for JARVIS AI assistant."""
+
 from typing import Any, Dict, Optional
 
 
 class JarvisBaseException(Exception):
     """Base exception for all JARVIS errors."""
+
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message)
         self.message = message
         self.details = details or {}
 
 
-class LLMException(JarvisBaseException):
-    """Base exception for LLM operations."""
+class ToolExecutionError(JarvisBaseException):
+    """Raised when a tool execution fails."""
     pass
 
 
-class LLMAuthenticationError(LLMException):
-    """Raised when LLM API authentication fails."""
+class ToolSecurityError(JarvisBaseException):
+    """Raised when tool execution violates security policies."""
     pass
 
 
-class LLMProviderUnavailableError(LLMException):
-    """Raised when LLM provider is offline or unreachable."""
+class LLMServiceError(JarvisBaseException):
+    """Raised when communication with the LLM provider fails."""
     pass
 
 
-class ToolException(JarvisBaseException):
-    """Base exception for tool execution errors."""
+class ConversationNotFoundError(JarvisBaseException):
+    """Raised when a requested conversation session does not exist."""
     pass
 
 
-class ToolNotFoundError(ToolException):
-    """Raised when a requested tool does not exist in registry."""
-    pass
-
-
-class ToolExecutionError(ToolException):
-    """Raised when an error occurs during tool execution."""
-    pass
-
-
-class ToolPermissionDeniedError(ToolException):
-    """Raised when user does not have required permission to execute tool."""
-    pass
-
-
-class ToolValidationError(ToolException):
-    """Raised when input parameters fail schema validation."""
+class MemoryError(JarvisBaseException):
+    """Raised when memory retrieval or storage fails."""
     pass

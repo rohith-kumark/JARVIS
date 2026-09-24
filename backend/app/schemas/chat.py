@@ -1,24 +1,28 @@
+"""Chat endpoint request and response schemas."""
+
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(description="User prompt or directive")
-    session_id: Optional[str] = Field(default=None, description="Conversation session ID")
-    caller_permission: str = Field(default="admin", description="Caller permission rank")
+    """Payload for POST /api/chat."""
+    message: str = Field(..., min_length=1, max_length=10000, description="User prompt or instruction")
+    conversation_id: Optional[str] = Field(None, description="Optional ID of existing conversation")
 
 
-class ToolExecutionRecord(BaseModel):
+class ToolCallInfo(BaseModel):
+    """Details of a tool executed during chat orchestration."""
     tool_name: str
     arguments: Dict[str, Any] = Field(default_factory=dict)
-    success: bool
-    data: Optional[Any] = None
-    error: Optional[str] = None
+    result: Any = None
+    status: str = "success"
     execution_time_ms: float = 0.0
 
 
 class ChatResponse(BaseModel):
-    reply: str
-    session_id: str
-    tool_executions: List[ToolExecutionRecord] = Field(default_factory=list)
-    llm_provider: str
+    """Payload returned by POST /api/chat."""
+    response: str
+    conversation_id: str
+    tool_calls: List[ToolCallInfo] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
