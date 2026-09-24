@@ -1,10 +1,10 @@
 import os
 import platform
-import time
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 from pydantic import BaseModel, Field
-from backend.app.tools.base import BaseTool, PermissionLevel
+
+from backend.app.tools.base import BaseTool, PermissionLevel, ToolCategory
 from backend.app.tools.registry import register_tool
 
 
@@ -19,14 +19,17 @@ class SystemInfoArgs(BaseModel):
 class SystemInfoTool(BaseTool):
     """
     Tool to retrieve runtime system health, local timestamp, and OS platform information.
+    Read-only inspection tool.
     """
-    name = "get_system_info"
+    name = "system_info"
     description = (
-        "Get runtime system information including current local timestamp, system status, "
-        "operating system platform, Python version, and system architecture."
+        "Get runtime host system information including current local timestamp, system status, "
+        "operating system platform, Python version, CPU cores, and system architecture."
     )
     permission_level = PermissionLevel.READ_ONLY
+    category = ToolCategory.SYSTEM
     args_schema = SystemInfoArgs
+    timeout_seconds = 5.0
 
     async def _run(self, include_environment: bool = False) -> Dict[str, Any]:
         info: Dict[str, Any] = {
@@ -43,3 +46,9 @@ class SystemInfoTool(BaseTool):
             info["architecture"] = platform.architecture()[0]
 
         return info
+
+
+@register_tool
+class GetSystemInfoAliasTool(SystemInfoTool):
+    """Alias for backwards compatibility with get_system_info."""
+    name = "get_system_info"

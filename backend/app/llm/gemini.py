@@ -35,6 +35,7 @@ def _dict_to_genai_schema(prop: Dict[str, Any]) -> types.Schema:
 class GeminiLLMClient(BaseLLMClient):
     """
     Google Gemini implementation of BaseLLMClient using the official google-genai SDK.
+    Supports single and multi-turn tool calling, multiple tools per turn, and streaming.
     """
 
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
@@ -52,25 +53,59 @@ class GeminiLLMClient(BaseLLMClient):
         return "gemini"
 
     def _convert_messages(self, messages: List[ChatMessage]) -> List[types.Content]:
-        """Convert generic ChatMessages into Gemini Contents."""
+        """
+        Convert standard ChatMessages into Gemini Contents.
+        Properly constructs Model turns with FunctionCalls and subsequent User turns
+        grouping all FunctionResponses.
+        """
         contents: List[types.Content] = []
-        for msg in messages:
-            role = "model" if msg.role == MessageRole.ASSISTANT else "user"
-            parts = []
+        idx = 0
 
-            if msg.content:
-                parts.append(types.Part.from_text(text=msg.content))
+        while idx < len(messages):
+            msg = messages[idx]
 
-            if msg.role == MessageRole.TOOL and msg.name:
-                parts.append(
-                    types.Part.from_function_response(
-                        name=msg.name,
-                        response={"result": msg.content}
+            if msg.role == MessageRole.USER:
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=msg.content or "")]
                     )
                 )
+                idx += 1
 
-            if parts:
-                contents.append(types.Content(role=role, parts=parts))
+            elif msg.role == MessageRole.ASSISTANT:
+                parts = []
+                if msg.content:
+                    parts.append(types.Part.from_text(text=msg.content))
+                if msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        parts.append(
+                            types.Part.from_function_call(
+                                name=tc.name,
+                                args=tc.arguments or {}
+                            )
+                        )
+                if parts:
+                    contents.append(types.Content(role="model", parts=parts))
+                idx += 1
+
+            elif msg.role == MessageRole.TOOL:
+                # Group all consecutive tool responses into a single user turn as required by Gemini
+                tool_parts = []
+                while idx < len(messages) and messages[idx].role == MessageRole.TOOL:
+                    tmsg = messages[idx]
+                    tool_parts.append(
+                        types.Part.from_function_response(
+                            name=tmsg.name or "tool",
+                            response={"result": tmsg.content or ""}
+                        )
+                    )
+                    idx += 1
+                if tool_parts:
+                    contents.append(types.Content(role="user", parts=tool_parts))
+
+            else:
+                idx += 1
 
         return contents
 
@@ -80,7 +115,7 @@ class GeminiLLMClient(BaseLLMClient):
         system_instruction: Optional[str] = None,
         temperature: float = 0.7
     ) -> types.GenerateContentConfig:
-        """Constructs GenerateContentConfig with tools and instructions."""
+        """Constructs GenerateContentConfig with tools and system instruction."""
         tool_objects = []
         if tools:
             func_decls = []
@@ -113,7 +148,7 @@ class GeminiLLMClient(BaseLLMClient):
         temperature: float = 0.7,
         **kwargs
     ) -> LLMResponse:
-        """Generate response from Gemini model."""
+        """Generate response from Gemini model, returning either direct text or tool calls."""
         try:
             contents = self._convert_messages(messages)
             config = self._build_config(tools=tools, system_instruction=system_instruction, temperature=temperature)

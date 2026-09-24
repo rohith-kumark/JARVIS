@@ -27,7 +27,7 @@ async def test_orchestrator_tool_calling_loop():
         caller_permission="admin",
     )
     assert len(response.tool_executions) >= 1
-    assert response.tool_executions[0].tool_name == "get_system_info"
+    assert response.tool_executions[0].tool_name in ("system_info", "get_system_info")
     assert response.tool_executions[0].success is True
     assert "operational" in response.reply.lower() or "normal" in response.reply.lower()
 
