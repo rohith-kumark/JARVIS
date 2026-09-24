@@ -4,18 +4,14 @@ export default function MessageItem({ message }) {
   const isUser = message.role === "user";
   const [showToolDetails, setShowToolDetails] = useState(false);
 
-  // Parse tool calls and saved memories if present in metadata or passed directly
+  // Parse tool calls if present in metadata or passed directly
   let toolCalls = message.tool_calls || [];
-  let savedMemories = message.saved_memories || [];
 
   if (message.metadata_json) {
     try {
       const parsed = JSON.parse(message.metadata_json);
       if (!toolCalls.length && parsed.tool_calls) {
         toolCalls = parsed.tool_calls;
-      }
-      if (!savedMemories.length && parsed.saved_memories) {
-        savedMemories = parsed.saved_memories;
       }
     } catch {
       // Ignore JSON parse errors
@@ -56,31 +52,6 @@ export default function MessageItem({ message }) {
         </div>
 
         <div className="message-content">{message.content}</div>
-
-        {/* Subtle Memory Indicator */}
-        {savedMemories && savedMemories.length > 0 && (
-          <div
-            style={{
-              marginTop: "8px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-              background: "rgba(0, 229, 255, 0.1)",
-              border: "1px solid rgba(0, 229, 255, 0.3)",
-              borderRadius: "14px",
-              padding: "3px 10px",
-              fontSize: "0.74rem",
-              color: "var(--cyan-primary)",
-              fontFamily: "var(--font-hud)",
-              letterSpacing: "0.5px",
-            }}
-          >
-            <span>🧠 Memory saved:</span>
-            <span style={{ color: "#e2e8f0", fontFamily: "var(--font-sans)", fontWeight: 400 }}>
-              {savedMemories.map((m) => m.content).join("; ")}
-            </span>
-          </div>
-        )}
 
         {/* Display Tool Calling Badges */}
         {toolCalls && toolCalls.length > 0 && (
