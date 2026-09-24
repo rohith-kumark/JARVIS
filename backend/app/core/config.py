@@ -40,7 +40,7 @@ class Settings(BaseSettings):
         description="Google Gemini API key. If absent, fallback to mock provider for local development",
     )
     GEMINI_MODEL: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3.6-flash",
         description="Default Gemini model to use for reasoning and tool orchestration",
     )
     DEFAULT_LLM_PROVIDER: str = Field(

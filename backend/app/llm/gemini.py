@@ -38,7 +38,7 @@ class GeminiLLMClient(BaseLLMClient):
     Supports single and multi-turn tool calling, multiple tools per turn, and streaming.
     """
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-3.6-flash"):
         if not api_key:
             raise LLMAuthenticationError("GEMINI_API_KEY must be provided")
         self._api_key = api_key
@@ -135,6 +135,7 @@ class GeminiLLMClient(BaseLLMClient):
         }
         if tool_objects:
             config_args["tools"] = tool_objects
+            config_args["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(disable=True)
         if system_instruction:
             config_args["system_instruction"] = system_instruction
 
