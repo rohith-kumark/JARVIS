@@ -89,10 +89,81 @@ export const api = {
   },
 
   /**
-   * Fetch memories and preferences
+   * Fetch all stored memories, optionally filtered by category
+   */
+  async getMemories(category = null) {
+    const query = category ? `?category=${encodeURIComponent(category)}` : "";
+    return request(`/memory${query}`);
+  },
+
+  /**
+   * Fetch a specific memory by ID
+   */
+  async getMemoryById(memoryId) {
+    return request(`/memory/${memoryId}`);
+  },
+
+  /**
+   * Manually create a new memory
+   */
+  async createMemory(content, category = "other", importance = 0.5) {
+    return request("/memory", {
+      method: "POST",
+      body: JSON.stringify({
+        content,
+        category,
+        importance,
+        source: "manual",
+      }),
+    });
+  },
+
+  /**
+   * Update an existing memory
+   */
+  async updateMemory(memoryId, updates) {
+    return request(`/memory/${memoryId}`, {
+      method: "PUT",
+      body: JSON.stringify(updates),
+    });
+  },
+
+  /**
+   * Delete an individual memory
+   */
+  async deleteMemory(memoryId) {
+    return request(`/memory/${memoryId}`, {
+      method: "DELETE",
+    });
+  },
+
+  /**
+   * Clear all memories
+   */
+  async clearMemories() {
+    return request("/memory", {
+      method: "DELETE",
+    });
+  },
+
+  /**
+   * Search memories by query
+   */
+  async searchMemories(query, category = null, limit = 10) {
+    return request("/memory/search", {
+      method: "POST",
+      body: JSON.stringify({
+        query,
+        category,
+        limit,
+      }),
+    });
+  },
+
+  /**
+   * Legacy memory getter
    */
   async getMemory(conversationId = null) {
-    const query = conversationId ? `?conversation_id=${conversationId}` : "";
-    return request(`/memory${query}`);
+    return this.getMemories();
   },
 };

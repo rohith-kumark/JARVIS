@@ -20,9 +20,16 @@ class ToolCallInfo(BaseModel):
     execution_time_ms: float = 0.0
 
 
+from backend.app.memory.models import MemoryRecord
+
+
 class ChatResponse(BaseModel):
     """Payload returned by POST /api/chat."""
     response: str
     conversation_id: str
     tool_calls: List[ToolCallInfo] = Field(default_factory=list)
+    saved_memories: List[MemoryRecord] = Field(
+        default_factory=list,
+        description="Any new or updated memories captured during this turn",
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
