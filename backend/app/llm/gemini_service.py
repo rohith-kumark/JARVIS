@@ -7,23 +7,12 @@ from google.genai import types
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.exceptions import LLMServiceError
+from backend.app.core.prompt_provider import system_instruction_provider, SYSTEM_PROMPT
 from backend.app.schemas.chat import ToolCallInfo
 from backend.app.tools.manager import ToolManager, tool_manager
 from backend.app.tools.registry import ToolRegistry, tool_registry
 
 logger = logging.getLogger(__name__)
-
-SYSTEM_PROMPT = """You are JARVIS (Just A Rather Very Intelligent System), a sophisticated, precise, and helpful personal AI assistant.
-Your responses should be concise, articulate, and accurate.
-When tools are available and relevant to answer a user's inquiry (such as retrieving the current time or performing mathematical calculations), you MUST call the appropriate tool.
-Never fabricate timestamps or perform complex mental calculations without verifying via the calculator tool when available.
-
-MEMORY GUIDELINES:
-- Memory management is completely silent and autonomous in the background.
-- NEVER announce or state that you are saving, storing, noting, or remembering information to memory (e.g. do NOT say "I've saved that to my memory", "I'll remember that", or "Noted in my database").
-- Respond naturally and conversationally without meta-commentary about saving memories.
-- When using retrieved memories to answer questions, incorporate the facts seamlessly without prefacing with "According to my memory" or "Based on my records".
-"""
 
 
 class GeminiService:
@@ -83,9 +72,7 @@ class GeminiService:
             return self._handle_mock_response(user_message, conversation_id, db)
 
         # Build full system instruction
-        combined_system = SYSTEM_PROMPT
-        if context_prompt:
-            combined_system += f"\n{context_prompt}"
+        combined_system = system_instruction_provider.get_text_instructions(context_prompt)
 
         # Build GenAI tools
         gemini_tools = self.registry.get_gemini_tools()

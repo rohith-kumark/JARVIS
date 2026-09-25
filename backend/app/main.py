@@ -6,12 +6,20 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.app.api.routes import chat_router, conversations_router, health_router, memory_router
+from backend.app.api.routes import (
+    chat_router,
+    conversations_router,
+    health_router,
+    memory_router,
+    voice_router,
+    ws_voice_router,
+)
 from backend.app.core.config import get_settings
 from backend.app.core.exceptions import JarvisBaseException
 from backend.app.core.logging import setup_logging
 from backend.app.db.session import init_db
 from backend.app.tools.registry import tool_registry
+from backend.app.voice.manager import voice_manager
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +43,11 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("Shutting down JARVIS AI Assistant backend...")
+    # Clean up any active voice sessions
+    try:
+        await voice_manager.close_all()
+    except Exception as e:
+        logger.warning(f"Error during voice sessions shutdown: {e}")
 
 
 def create_app() -> FastAPI:
@@ -44,7 +57,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
-        description="JARVIS Personal AI Assistant - Phase 1 Core Reasoning and Tool Execution Engine",
+        description="JARVIS Personal AI Assistant - Core Reasoning, Memory, and Real-Time Voice Engine",
         lifespan=lifespan,
     )
 
@@ -87,6 +100,8 @@ def create_app() -> FastAPI:
     app.include_router(chat_router)
     app.include_router(conversations_router)
     app.include_router(memory_router)
+    app.include_router(voice_router, prefix="/api")
+    app.include_router(ws_voice_router)
 
     return app
 

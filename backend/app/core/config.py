@@ -49,6 +49,20 @@ class Settings(BaseSettings):
         description="Path to local persistent JSON memory storage file",
     )
 
+    # Voice Assistant Settings (Phase 3)
+    VOICE_ENABLED: bool = Field(default=True, description="Enable real-time voice subsystem")
+    VOICE_MODEL: str = Field(
+        default="gemini-2.5-flash-native-audio-latest",
+        description="Gemini model for real-time voice streaming",
+    )
+    VOICE_NAME: str = Field(
+        default="Puck",
+        description="Default Gemini voice name (e.g. Puck, Charon, Kore, Fenrir, Aoede)",
+    )
+    VOICE_INPUT_SAMPLE_RATE: int = Field(default=16000, description="Input PCM sample rate in Hz")
+    VOICE_OUTPUT_SAMPLE_RATE: int = Field(default=24000, description="Output PCM sample rate in Hz")
+    VOICE_CHANNELS: int = Field(default=1, description="Audio channel count (1 for mono)")
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
