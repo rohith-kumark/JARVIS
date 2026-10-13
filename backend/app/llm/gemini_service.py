@@ -17,6 +17,12 @@ SYSTEM_PROMPT = """You are JARVIS (Just A Rather Very Intelligent System), a sop
 Your responses should be concise, articulate, and accurate.
 When tools are available and relevant to answer a user's inquiry (such as retrieving the current time or performing mathematical calculations), you MUST call the appropriate tool.
 Never fabricate timestamps or perform complex mental calculations without verifying via the calculator tool when available.
+
+MEMORY GUIDELINES:
+- Memory management is completely silent and autonomous in the background.
+- NEVER announce or state that you are saving, storing, noting, or remembering information to memory (e.g. do NOT say "I've saved that to my memory", "I'll remember that", or "Noted in my database").
+- Respond naturally and conversationally without meta-commentary about saving memories.
+- When using retrieved memories to answer questions, incorporate the facts seamlessly without prefacing with "According to my memory" or "Based on my records".
 """
 
 
@@ -98,64 +104,80 @@ class GeminiService:
 
         executed_tool_calls: List[ToolCallInfo] = []
 
-        try:
-            config = types.GenerateContentConfig(
-                system_instruction=combined_system,
-                tools=gemini_tools if gemini_tools else None,
-                temperature=0.2,
-            )
+        # Candidate models with automatic failover
+        models_to_try = []
+        for m in [self.settings.GEMINI_MODEL, "gemini-3-flash-preview", "gemini-3.5-flash-lite"]:
+            if m and m not in models_to_try:
+                models_to_try.append(m)
 
-            chat = self._client.chats.create(
-                model=self.settings.GEMINI_MODEL,
-                config=config,
-                history=contents_history,
-            )
+        last_error = None
+        for model_name in models_to_try:
+            executed_tool_calls: List[ToolCallInfo] = []
+            try:
+                config = types.GenerateContentConfig(
+                    system_instruction=combined_system,
+                    tools=gemini_tools if gemini_tools else None,
+                    temperature=0.2,
+                )
 
-            # Send user query to initiate turn
-            current_response = chat.send_message(user_message)
+                chat = self._client.chats.create(
+                    model=model_name,
+                    config=config,
+                    history=contents_history,
+                )
 
-            # Handle tool calling loop
-            max_tool_iterations = 5
-            iteration = 0
+                # Send user query to initiate turn
+                current_response = chat.send_message(user_message)
 
-            while current_response.function_calls and iteration < max_tool_iterations:
-                iteration += 1
-                function_response_parts: List[types.Part] = []
+                # Handle tool calling loop
+                max_tool_iterations = 5
+                iteration = 0
 
-                for call in current_response.function_calls:
-                    tool_name = call.name
-                    arguments = call.args or {}
+                while current_response.function_calls and iteration < max_tool_iterations:
+                    iteration += 1
+                    function_response_parts: List[types.Part] = []
 
-                    # Execute tool via ToolManager
-                    tool_call_info = self.tool_manager.execute_tool(
-                        tool_name=tool_name,
-                        arguments=arguments,
-                        conversation_id=conversation_id,
-                        db=db,
-                    )
-                    executed_tool_calls.append(tool_call_info)
+                    for call in current_response.function_calls:
+                        tool_name = call.name
+                        arguments = call.args or {}
 
-                    # Return result part to Gemini
-                    part = types.Part.from_function_response(
-                        name=tool_name,
-                        response={"result": tool_call_info.result},
-                    )
-                    function_response_parts.append(part)
+                        # Execute tool via ToolManager
+                        tool_call_info = self.tool_manager.execute_tool(
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            conversation_id=conversation_id,
+                            db=db,
+                        )
+                        executed_tool_calls.append(tool_call_info)
 
-                # Send function responses back to continue dialog
-                current_response = chat.send_message(function_response_parts)
+                        # Return result part to Gemini
+                        part = types.Part.from_function_response(
+                            name=tool_name,
+                            response={"result": tool_call_info.result},
+                        )
+                        function_response_parts.append(part)
 
-            final_text = current_response.text or "I have processed your request."
-            return final_text, executed_tool_calls
+                    # Send function responses back to continue dialog
+                    current_response = chat.send_message(function_response_parts)
 
-        except Exception as e:
-            err_str = str(e)
-            logger.error(f"Gemini API error during chat turn: {err_str}", exc_info=True)
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                logger.warning("Gemini API rate limit or quota exceeded. Falling back to Standby execution.")
-                text, calls = self._handle_mock_response(user_message, conversation_id, db)
-                return f"[Standby Mode — API Rate Limit Reached]\n{text}", calls
-            raise LLMServiceError(f"Error communicating with Gemini: {err_str}")
+                final_text = current_response.text or "I have processed your request."
+                return final_text, executed_tool_calls
+
+            except Exception as e:
+                err_str = str(e)
+                last_error = e
+                logger.warning(
+                    f"Model '{model_name}' encountered error ({err_str[:100]}). Trying next candidate..."
+                )
+                if any(x in err_str for x in ["429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE"]):
+                    continue
+                # If non-retryable error, raise
+                raise LLMServiceError(f"Error communicating with Gemini: {err_str}")
+
+        # If all candidates exhausted, fallback to standby handler
+        logger.warning("All Gemini candidate models rate-limited or unavailable. Activating Standby mode.")
+        text, calls = self._handle_mock_response(user_message, conversation_id, db)
+        return f"[Standby Mode — API Rate Limit Reached]\n{text}", calls
 
     def _handle_mock_response(
         self,

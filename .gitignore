@@ -24,6 +24,8 @@ venv/
 ENV/
 *.db
 *.sqlite3
+data/*.json
+!data/.gitkeep
 
 # Environment Variables & Secrets
 .env

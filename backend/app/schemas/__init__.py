@@ -8,7 +8,16 @@ from backend.app.schemas.conversation import (
     MessageRead,
 )
 from backend.app.schemas.health import HealthResponse
-from backend.app.schemas.memory import MemoryItem, MemoryResponse
+from backend.app.schemas.memory import (
+    MemoryCategory,
+    MemoryCreate,
+    MemoryItem,
+    MemoryListResponse,
+    MemoryRecord,
+    MemoryResponse,
+    MemorySearchRequest,
+    MemoryUpdate,
+)
 from backend.app.schemas.tool import ToolDefinition, ToolExecutionRecord
 
 __all__ = [
@@ -22,6 +31,12 @@ __all__ = [
     "HealthResponse",
     "MemoryItem",
     "MemoryResponse",
+    "MemoryRecord",
+    "MemoryCreate",
+    "MemoryUpdate",
+    "MemorySearchRequest",
+    "MemoryListResponse",
+    "MemoryCategory",
     "ToolDefinition",
     "ToolExecutionRecord",
 ]

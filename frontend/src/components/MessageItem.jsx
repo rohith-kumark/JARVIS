@@ -6,10 +6,11 @@ export default function MessageItem({ message }) {
 
   // Parse tool calls if present in metadata or passed directly
   let toolCalls = message.tool_calls || [];
-  if (!toolCalls.length && message.metadata_json) {
+
+  if (message.metadata_json) {
     try {
       const parsed = JSON.parse(message.metadata_json);
-      if (parsed.tool_calls) {
+      if (!toolCalls.length && parsed.tool_calls) {
         toolCalls = parsed.tool_calls;
       }
     } catch {

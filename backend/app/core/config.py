@@ -43,6 +43,12 @@ class Settings(BaseSettings):
         description="SQLAlchemy database connection URL (defaults to SQLite, ready for PostgreSQL)",
     )
 
+    # Persistent Memory Settings
+    MEMORY_FILE_PATH: str = Field(
+        default="data/memory.json",
+        description="Path to local persistent JSON memory storage file",
+    )
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

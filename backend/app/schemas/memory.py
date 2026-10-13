@@ -1,12 +1,21 @@
-"""Memory schemas."""
+"""Memory schemas for Phase 1 and Phase 2."""
 
 from datetime import datetime
 from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.memory.models import (
+    MemoryCategory,
+    MemoryCreate,
+    MemoryListResponse,
+    MemoryRecord,
+    MemorySearchRequest,
+    MemoryUpdate,
+)
+
 
 class MemoryItem(BaseModel):
-    """A memory item representing context or saved knowledge."""
+    """Legacy Phase 1 memory item representation."""
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -18,7 +27,20 @@ class MemoryItem(BaseModel):
 
 
 class MemoryResponse(BaseModel):
-    """Response returned by GET /api/memory."""
+    """Response returned by legacy GET /api/memory."""
     conversation_id: Optional[str] = None
-    memories: List[MemoryItem] = Field(default_factory=list)
+    memories: List[MemoryRecord] = Field(default_factory=list)
+    total: int = 0
     preferences: Dict[str, str] = Field(default_factory=dict)
+
+
+__all__ = [
+    "MemoryRecord",
+    "MemoryCreate",
+    "MemoryUpdate",
+    "MemorySearchRequest",
+    "MemoryListResponse",
+    "MemoryCategory",
+    "MemoryItem",
+    "MemoryResponse",
+]
