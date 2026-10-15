@@ -4,6 +4,9 @@ export default function Header({
   health,
   onToggleSidebar,
   onOpenMemory,
+  voiceActive,
+  voiceState,
+  onToggleVoice,
 }) {
   const isOnline = health?.status === "ok";
 
@@ -55,6 +58,22 @@ export default function Header({
             <span>{health.tools_count} ARMED</span>
           </div>
         )}
+
+        {/* Voice Status */}
+        <div
+          className="status-pill"
+          onClick={onToggleVoice}
+          style={{ cursor: "pointer" }}
+          title={voiceActive ? "Halt voice interaction" : "Initiate voice interaction"}
+        >
+          <div
+            className={`status-dot ${voiceActive ? "online" : ""}`}
+            style={{ background: voiceActive ? "var(--cyan-primary)" : "#64748b" }}
+          ></div>
+          <span style={{ color: voiceActive ? "var(--cyan-primary)" : "inherit" }}>
+            VOICE: {voiceState || (voiceActive ? "ACTIVE" : "READY")}
+          </span>
+        </div>
 
         {/* Memory View Button */}
         <button className="btn-hud" onClick={onOpenMemory} title="Inspect active memory and preferences">

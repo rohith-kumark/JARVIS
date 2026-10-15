@@ -166,4 +166,25 @@ export const api = {
   async getMemory(conversationId = null) {
     return this.getMemories();
   },
+
+  /**
+   * Voice Subsystem (Phase 3)
+   */
+  async getVoiceConfig() {
+    return request("/voice/config");
+  },
+
+  async getVoices() {
+    return request("/voice/voices");
+  },
+
+  async getVoiceDevices() {
+    return request("/voice/devices");
+  },
+
+  getVoiceWsUrl() {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.host;
+    return `${proto}//${host}/ws/voice`;
+  },
 };

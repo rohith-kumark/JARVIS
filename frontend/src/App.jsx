@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import InputBox from "./components/InputBox";
 import MemoryModal from "./components/MemoryModal";
+import VoiceHUD from "./components/VoiceHUD";
 import { api } from "./services/api";
+import { AudioStreamer } from "./services/audioStreamer";
 
 export default function App() {
   const [health, setHealth] = useState(null);
@@ -17,13 +19,38 @@ export default function App() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [errorBanner, setErrorBanner] = useState(null);
 
-  // Poll / load health and conversations on mount
+  // Phase 3: Real-Time Voice State
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceState, setVoiceState] = useState("IDLE");
+  const [voiceName, setVoiceName] = useState("Puck");
+  const [supportedVoices, setSupportedVoices] = useState(["Puck", "Charon", "Kore", "Fenrir", "Aoede"]);
+  const [voiceError, setVoiceError] = useState(null);
+
+  const wsRef = useRef(null);
+  const streamerRef = useRef(null);
+
+  // Poll / load health, conversations, and voice configuration on mount
   useEffect(() => {
     checkHealth();
     loadConversations();
+    loadVoiceConfig();
     const timer = setInterval(checkHealth, 15000);
     return () => clearInterval(timer);
   }, []);
+
+  const loadVoiceConfig = async () => {
+    try {
+      const data = await api.getVoices();
+      if (data?.voices?.length) {
+        setSupportedVoices(data.voices);
+      }
+      if (data?.default) {
+        setVoiceName(data.default);
+      }
+    } catch {
+      // Use defaults if config endpoint unavailable
+    }
+  };
 
   const checkHealth = async () => {
     try {
@@ -134,12 +161,142 @@ export default function App() {
     }
   };
 
+  // Cleanup voice session on unmount
+  useEffect(() => {
+    return () => {
+      stopVoiceSession();
+    };
+  }, []);
+
+  const stopVoiceSession = () => {
+    if (streamerRef.current) {
+      streamerRef.current.stopRecording();
+      streamerRef.current = null;
+    }
+    if (wsRef.current) {
+      try {
+        if (wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "stop" }));
+        }
+        wsRef.current.close();
+      } catch {}
+      wsRef.current = null;
+    }
+    setVoiceActive(false);
+    setVoiceState("IDLE");
+  };
+
+  const handleInterruptVoice = () => {
+    if (streamerRef.current) {
+      streamerRef.current.interrupt();
+    }
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "interrupt" }));
+    }
+    setVoiceState("INTERRUPTED");
+  };
+
+  const handleToggleVoice = async () => {
+    if (voiceActive) {
+      stopVoiceSession();
+      return;
+    }
+
+    setVoiceError(null);
+    setVoiceState("CONNECTING");
+
+    try {
+      // 1. Initialize AudioStreamer
+      const streamer = new AudioStreamer({
+        onAudioChunk: (b64) => {
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: "audio", data: b64 }));
+          }
+        },
+        onError: (err) => {
+          setVoiceError(err);
+          setVoiceState("ERROR");
+          stopVoiceSession();
+        },
+      });
+
+      streamerRef.current = streamer;
+
+      // 2. Open WebSocket connection
+      const wsUrl = api.getVoiceWsUrl();
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = async () => {
+        // Send initial setup frame
+        ws.send(JSON.stringify({ type: "start", voice_name: voiceName }));
+
+        // Start microphone streaming
+        try {
+          await streamer.startRecording();
+          setVoiceActive(true);
+          setVoiceState("LISTENING");
+        } catch (micErr) {
+          setVoiceError(micErr.message);
+          setVoiceState("ERROR");
+          stopVoiceSession();
+        }
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "state" && msg.state) {
+            setVoiceState(msg.state);
+          } else if (msg.type === "audio" && msg.data) {
+            streamer.playChunk(msg.data, msg.sample_rate || 24000);
+          } else if (msg.type === "interrupted") {
+            streamer.interrupt();
+            setVoiceState("LISTENING");
+          } else if (msg.type === "transcript" && msg.text) {
+            // Append spoken transcript to chat window
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: msg.role === "user" ? "user" : "assistant",
+                content: msg.text,
+                created_at: new Date().toISOString(),
+              },
+            ]);
+          } else if (msg.type === "error") {
+            setVoiceError(msg.message);
+            setVoiceState("ERROR");
+          }
+        } catch (e) {
+          console.warn("Error parsing voice message:", e);
+        }
+      };
+
+      ws.onerror = (e) => {
+        console.error("Voice WebSocket error:", e);
+        setVoiceError("Voice streaming connection error.");
+        setVoiceState("ERROR");
+      };
+
+      ws.onclose = () => {
+        stopVoiceSession();
+      };
+    } catch (err) {
+      setVoiceError(err.message || "Failed to start voice session");
+      setVoiceState("ERROR");
+      stopVoiceSession();
+    }
+  };
+
   return (
     <div className="jarvis-app">
       <Header
         health={health}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         onOpenMemory={() => setMemoryOpen(true)}
+        voiceActive={voiceActive}
+        voiceState={voiceState}
+        onToggleVoice={handleToggleVoice}
       />
 
       {errorBanner && (
@@ -176,6 +333,17 @@ export default function App() {
         />
 
         <main className="jarvis-main">
+          {/* Phase 3: Voice HUD Component */}
+          <VoiceHUD
+            voiceState={voiceState}
+            voiceName={voiceName}
+            supportedVoices={supportedVoices}
+            onSelectVoice={(v) => setVoiceName(v)}
+            onToggleVoice={handleToggleVoice}
+            onInterrupt={handleInterruptVoice}
+            errorMessage={voiceError}
+          />
+
           <ChatWindow
             messages={messages}
             loading={loading}
@@ -188,6 +356,9 @@ export default function App() {
             onSend={() => handleSendMessage()}
             disabled={loading}
             loading={loading}
+            voiceActive={voiceActive}
+            voiceState={voiceState}
+            onToggleVoice={handleToggleVoice}
           />
         </main>
       </div>
